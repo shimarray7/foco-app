@@ -1296,40 +1296,47 @@ const SUPABASE_KEY = 'sb_publishable_67hKR2Wt72hPvaUuA5wfsQ_JdhVTypM';
     /* ═══════════════════════════════════════════════
        SAVE INDICATOR
     ═══════════════════════════════════════════════ */
-    let saveHideTimer;
-    function showSaving() {
-      clearTimeout(saveHideTimer);
+    let saveHideTimer = null;
+
+    function setSaveIndicator(state, msg) {
+      if (saveHideTimer) { clearTimeout(saveHideTimer); saveHideTimer = null; }
       const ind   = document.getElementById('save-indicator');
       const dot   = document.getElementById('save-dot');
       const label = document.getElementById('save-label');
-      dot.className     = 'save-dot';
-      label.textContent = 'Salvando...';
-      ind.classList.add('visible');
-    }
-    function showSaved() {
-      const dot   = document.getElementById('save-dot');
-      const label = document.getElementById('save-label');
-      dot.className     = 'save-dot done';
-      label.textContent = 'Salvo ✓';
-      saveHideTimer = setTimeout(() => {
-        document.getElementById('save-indicator').classList.remove('visible');
-      }, 1800);
-    }
-    function showSaveError(msg) {
-      const ind   = document.getElementById('save-indicator');
-      const dot   = document.getElementById('save-dot');
-      const label = document.getElementById('save-label');
-      dot.className     = 'save-dot';
-      dot.style.background = 'var(--danger)';
-      label.textContent = 'Erro ao salvar';
-      label.style.color = 'var(--danger)';
-      showToast('Erro ao salvar: ' + (msg || 'verifique o console'));
-      saveHideTimer = setTimeout(() => {
+      if (!ind || !dot || !label) return;
+
+      // Reset styles
+      dot.style.background = '';
+      label.style.color    = '';
+
+      if (state === 'saving') {
+        dot.className     = 'save-dot';
+        label.textContent = 'Salvando...';
+        ind.classList.add('visible');
+
+      } else if (state === 'saved') {
+        dot.className     = 'save-dot done';
+        label.textContent = 'Salvo ✓';
+        ind.classList.add('visible');
+        saveHideTimer = setTimeout(() => ind.classList.remove('visible'), 2000);
+
+      } else if (state === 'error') {
+        dot.className         = 'save-dot';
+        dot.style.background  = 'var(--danger)';
+        label.textContent     = msg || 'Erro ao salvar';
+        label.style.color     = 'var(--danger)';
+        ind.classList.add('visible');
+        showToast(msg || 'Erro ao salvar');
+        saveHideTimer = setTimeout(() => ind.classList.remove('visible'), 5000);
+
+      } else if (state === 'hide') {
         ind.classList.remove('visible');
-        dot.style.background = '';
-        label.style.color = '';
-      }, 4000);
+      }
     }
+
+    function showSaving() { setSaveIndicator('saving'); }
+    function showSaved()  { setSaveIndicator('saved'); }
+    function showSaveError(msg) { setSaveIndicator('error', msg); }
 
     /* ═══════════════════════════════════════════════
        DATABASE — UPSERT (insert or update)
