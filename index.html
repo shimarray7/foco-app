@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
   <!-- Supabase SDK -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.26.0/dist/umd/supabase.min.js"></script>
 
   <!--
   ╔══════════════════════════════════════════════════════════╗
@@ -1005,7 +1005,7 @@
        !! CONFIGURAÇÃO — SUBSTITUA AQUI !!
     ═══════════════════════════════════════════════ */
     const SUPABASE_URL = 'https://nwosvkdcweibdhexijkw.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_67hKR2Wt72hPvaUuA5wfsQ_JdhVTypM';
+    const SUPABASE_KEY = 'sb_publishable_67hKR2Wt72hPvaUuA5wfsQ_JdhVTypM';
     /* ═══════════════════════════════════════════════
        SUPABASE CLIENT
     ═══════════════════════════════════════════════ */
@@ -1150,7 +1150,20 @@ const SUPABASE_KEY = 'sb_publishable_67hKR2Wt72hPvaUuA5wfsQ_JdhVTypM';
 
     /* ── Logout ── */
     document.getElementById('btn-logout').addEventListener('click', async () => {
-      await sb.auth.signOut();
+      try {
+        await sb.auth.signOut();
+        currentSession = null;
+        currentUser = null;
+        goals = [];
+        showAuthScreen();
+      } catch(e) {
+        console.error('logout error:', e);
+        // Force logout anyway
+        currentSession = null;
+        currentUser = null;
+        goals = [];
+        showAuthScreen();
+      }
     });
 
     /* ── Enter key on auth inputs ── */
@@ -1181,8 +1194,12 @@ const SUPABASE_KEY = 'sb_publishable_67hKR2Wt72hPvaUuA5wfsQ_JdhVTypM';
        AUTH STATE LISTENER
        Runs on page load and on every auth change
     ═══════════════════════════════════════════════ */
+    // Store session globally so persistGoal can use it directly
+    let currentSession = null;
+
     sb.auth.onAuthStateChange(async (event, session) => {
       clearTimeout(authWatchdog);
+      currentSession = session;
       if (session?.user) {
         currentUser = session.user;
         showAppScreen();
@@ -1192,6 +1209,7 @@ const SUPABASE_KEY = 'sb_publishable_67hKR2Wt72hPvaUuA5wfsQ_JdhVTypM';
         renderStreak();
         render();
       } else {
+        currentSession = null;
         currentUser = null;
         goals = [];
         hideLoader();
@@ -1307,36 +1325,36 @@ const SUPABASE_KEY = 'sb_publishable_67hKR2Wt72hPvaUuA5wfsQ_JdhVTypM';
        DATABASE — UPSERT (insert or update)
     ═══════════════════════════════════════════════ */
     async function persistGoal(goal) {
-      if (!currentUser) return;
+      if (!currentUser) { showSaveError('Não logado'); return; }
       showSaving();
 
       try {
         const row = localToDb(goal);
 
-        // Try INSERT
-        const { error: insertErr } = await sb.from('goals').insert(row);
+        // INSERT with explicit select to confirm result
+        const { data, error: insertErr } = await sb
+          .from('goals')
+          .insert(row)
+          .select('id');
 
         if (!insertErr) {
           showSaved();
           return;
         }
 
-        // Already exists — do UPDATE
+        // Duplicate key — UPDATE instead
         if (insertErr.code === '23505') {
           const { error: updateErr } = await sb
             .from('goals')
             .update(row)
-            .eq('id', goal.id);
+            .eq('id', goal.id)
+            .select('id');
 
-          if (updateErr) {
-            showSaveError(updateErr.code + ': ' + updateErr.message);
-          } else {
-            showSaved();
-          }
+          if (!updateErr) { showSaved(); }
+          else { showSaveError(updateErr.code + ': ' + updateErr.message); }
           return;
         }
 
-        // Other error
         showSaveError(insertErr.code + ': ' + insertErr.message);
 
       } catch(e) {
