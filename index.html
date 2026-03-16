@@ -808,7 +808,8 @@
   <!-- ═══ GLOBAL LOADER ═══ -->
   <div id="global-loader">
     <div class="loader-logo">Foco</div>
-    <div class="loader-spinner"></div>
+    <div class="loader-spinner" id="loader-spinner"></div>
+    <p id="loader-error" style="display:none;font-size:13px;color:#e03b3b;text-align:center;max-width:280px;line-height:1.6;font-family:'Inter',sans-serif;padding:0 20px;margin-top:8px;"></p>
   </div>
 
   <!-- ═══ SAVING INDICATOR ═══ -->
@@ -1182,6 +1183,7 @@
        Runs on page load and on every auth change
     ═══════════════════════════════════════════════ */
     sb.auth.onAuthStateChange(async (event, session) => {
+      clearTimeout(authWatchdog);
       if (session?.user) {
         currentUser = session.user;
         showAppScreen();
@@ -1197,6 +1199,22 @@
         showAuthScreen();
       }
     });
+
+    /* Safety net: if Supabase never responds in 10s, show helpful error */
+    const authWatchdog = setTimeout(() => {
+      const spinner = document.getElementById('loader-spinner');
+      const errEl   = document.getElementById('loader-error');
+      const url     = typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : '';
+      if (spinner) spinner.style.display = 'none';
+      if (errEl) {
+        errEl.style.display = 'block';
+        if (!url || url.includes('COLE_AQUI')) {
+          errEl.innerHTML = '⚠ As chaves do Supabase não foram configuradas.<br><br>Abra o index.html e substitua<br><b>SUPABASE_URL</b> e <b>SUPABASE_KEY</b><br>pelos seus valores reais.';
+        } else {
+          errEl.innerHTML = '⚠ Não foi possível conectar ao Supabase.<br><br>Verifique se a URL e a chave API estão corretas em Settings → API.';
+        }
+      }
+    }, 10000);
 
     /* ═══════════════════════════════════════════════
        DATABASE — LOAD
@@ -1293,7 +1311,14 @@
       if (!currentUser) return;
       showSaving();
       const row = localToDb(goal);
-      const { error } = await sb.from('goals').upsert(row, { onConflict: 'id' });
+
+      // Race: DB call vs 15s timeout
+      const dbCall = sb.from('goals').upsert(row, { onConflict: 'id' });
+      const timeout = new Promise(resolve =>
+        setTimeout(() => resolve({ error: { message: 'Timeout: sem resposta do servidor em 15s' } }), 15000)
+      );
+
+      const { error } = await Promise.race([dbCall, timeout]);
       if (error) {
         console.error('persistGoal error:', error);
         showSaveError(error.message);
