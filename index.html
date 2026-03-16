@@ -1,0 +1,1844 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Foco — Seus Objetivos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
+
+  <!--
+  ╔══════════════════════════════════════════════════════╗
+  ║   FOCO — App de Objetivos                           ║
+  ║   Recursos:                                         ║
+  ║   • Adicionar / concluir / remover objetivos        ║
+  ║   • Deadline com contagem regressiva colorida       ║
+  ║   • Edição inline (duplo clique no título)          ║
+  ║   • Sub-tarefas com checklist                       ║
+  ║   • Streak de dias consecutivos                     ║
+  ║   • Modo Foco (tela cheia, 1 objetivo por vez)      ║
+  ║   • Frase motivacional do dia                       ║
+  ║   • Prioridade Alta/Média/Baixa                     ║
+  ║   • Filtros: Todos / Ativos / Concluídos            ║
+  ║   • Partículas ao concluir                          ║
+  ║   • Dados salvos em localStorage                    ║
+  ╚══════════════════════════════════════════════════════╝
+  -->
+
+  <style>
+  /* ═══════════════════════════════════════════════════════
+     RESET & VARIABLES
+  ═══════════════════════════════════════════════════════ */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:           #f7f9fc;
+    --bg2:          #ffffff;
+    --bg3:          #eef2f8;
+    --blue:         #2563eb;
+    --blue-mid:     #3b7af5;
+    --blue-light:   #93b4f8;
+    --blue-dim:     rgba(37,99,235,0.09);
+    --border:       rgba(37,99,235,0.1);
+    --border-mid:   rgba(37,99,235,0.22);
+    --text:         #0f172a;
+    --text-muted:   #64748b;
+    --text-dim:     #94a3b8;
+    --danger:       #e03b3b;
+    --danger-dim:   rgba(224,59,59,0.1);
+    --success:      #1e8a5e;
+    --success-dim:  rgba(30,138,94,0.1);
+    --warn:         #c47c14;
+    --warn-dim:     rgba(196,124,20,0.1);
+    --radius:       16px;
+    --radius-sm:    10px;
+    --shadow-sm:    0 1px 4px rgba(15,23,42,0.07), 0 4px 16px rgba(15,23,42,0.05);
+    --shadow:       0 4px 24px rgba(15,23,42,0.1), 0 1px 4px rgba(15,23,42,0.06);
+    --shadow-blue:  0 0 0 3px rgba(37,99,235,0.15), 0 4px 20px rgba(37,99,235,0.12);
+    --trans:        0.25s cubic-bezier(0.4,0,0.2,1);
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
+  }
+
+  /* ambient background */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse 700px 400px at 60% -80px, rgba(37,99,235,0.07) 0%, transparent 70%),
+      radial-gradient(ellipse 400px 300px at 10% 80%,  rgba(59,122,245,0.04) 0%, transparent 60%);
+    pointer-events: none; z-index: 0;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     SCROLL LINE
+  ═══════════════════════════════════════════════════════ */
+  .scroll-line {
+    position: fixed; top: 0; left: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--blue), var(--blue-light));
+    width: 0%; z-index: 1000;
+    transition: width 0.1s;
+    border-radius: 0 2px 2px 0;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     PARTICLES & CELEBRATION
+  ═══════════════════════════════════════════════════════ */
+  #particle-canvas { position: fixed; inset: 0; pointer-events: none; z-index: 9999; }
+
+  .celebration-overlay {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 9998; pointer-events: none; opacity: 0;
+  }
+  .celebration-overlay.active { animation: celebFade 2.4s forwards; }
+  .celebration-text {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(18px, 4vw, 32px);
+    font-style: italic; font-weight: 400;
+    color: var(--blue); text-align: center;
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(16px);
+    border-radius: 100px;
+    padding: 16px 36px;
+    border: 1px solid var(--border-mid);
+    box-shadow: var(--shadow-blue);
+    max-width: 90vw;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     TOAST
+  ═══════════════════════════════════════════════════════ */
+  #toast {
+    position: fixed; bottom: 28px; left: 50%;
+    transform: translateX(-50%) translateY(16px);
+    background: var(--text); color: #fff;
+    border-radius: 100px; padding: 10px 22px;
+    font-size: 13px; opacity: 0;
+    transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    z-index: 10000; white-space: nowrap; pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ═══════════════════════════════════════════════════════
+     LAYOUT
+  ═══════════════════════════════════════════════════════ */
+  .app {
+    position: relative; z-index: 1;
+    width: 100%; max-width: 660px;
+    padding: 0 20px 100px;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     DAILY QUOTE BANNER
+  ═══════════════════════════════════════════════════════ */
+  .quote-banner {
+    background: var(--blue-dim);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 20px;
+    margin-bottom: 28px;
+    display: flex; align-items: flex-start; gap: 12px;
+    opacity: 0; animation: fadeUp 0.6s 0.08s forwards;
+  }
+  .quote-icon {
+    font-size: 18px; flex-shrink: 0; margin-top: 1px;
+    color: var(--blue); opacity: 0.7;
+  }
+  .quote-body { flex: 1; }
+  .quote-text {
+    font-family: 'Playfair Display', serif;
+    font-size: 14px; font-style: italic; font-weight: 400;
+    color: var(--text); line-height: 1.55;
+  }
+  .quote-author {
+    font-size: 10.5px; color: var(--text-dim);
+    margin-top: 4px; letter-spacing: 0.06em;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     HEADER
+  ═══════════════════════════════════════════════════════ */
+  header { padding: 48px 0 24px; text-align: center; }
+
+  .header-eyebrow {
+    font-size: 10.5px; font-weight: 500;
+    letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--blue); margin-bottom: 14px;
+    opacity: 0; animation: fadeUp 0.6s 0.12s forwards;
+  }
+  .header-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(38px, 8vw, 56px);
+    font-weight: 400; line-height: 1.06;
+    color: var(--text); letter-spacing: -0.02em;
+    opacity: 0; animation: fadeUp 0.6s 0.22s forwards;
+  }
+  .header-title em { font-style: italic; color: var(--blue); }
+  .header-sub {
+    margin-top: 12px; font-size: 14px; font-weight: 300;
+    color: var(--text-muted); line-height: 1.65;
+    opacity: 0; animation: fadeUp 0.6s 0.32s forwards;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     STREAK BADGE
+  ═══════════════════════════════════════════════════════ */
+  .streak-wrap {
+    display: flex; justify-content: center;
+    margin: 16px 0 0;
+    opacity: 0; animation: fadeUp 0.6s 0.40s forwards;
+  }
+  .streak-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 100px; padding: 7px 18px;
+    box-shadow: var(--shadow-sm);
+    font-size: 13px; font-weight: 500; color: var(--text-muted);
+    transition: all var(--trans);
+  }
+  .streak-badge.active {
+    border-color: rgba(234,88,12,0.3);
+    background: rgba(234,88,12,0.06);
+    color: #ea580c;
+  }
+  .streak-fire { font-size: 16px; }
+  .streak-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 17px; font-weight: 400;
+    color: #ea580c;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     PROGRESS RING
+  ═══════════════════════════════════════════════════════ */
+  .progress-section {
+    display: flex; justify-content: center;
+    margin: 24px 0 20px;
+    opacity: 0; animation: fadeUp 0.6s 0.44s forwards;
+  }
+  .progress-ring-wrap { position: relative; width: 110px; height: 110px; }
+  .progress-ring-wrap svg { transform: rotate(-90deg); display: block; }
+  .ring-bg  { fill: none; stroke: var(--bg3); stroke-width: 7; }
+  .ring-fill {
+    fill: none; stroke: var(--blue); stroke-width: 7;
+    stroke-linecap: round;
+    stroke-dasharray: 282.74; stroke-dashoffset: 282.74;
+    transition: stroke-dashoffset 0.85s cubic-bezier(0.4,0,0.2,1);
+  }
+  .progress-inner {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .progress-pct {
+    font-family: 'Playfair Display', serif;
+    font-size: 26px; font-weight: 400;
+    color: var(--blue); line-height: 1;
+  }
+  .progress-label {
+    font-size: 9.5px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--text-dim); margin-top: 3px;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     STATS
+  ═══════════════════════════════════════════════════════ */
+  .stats-row {
+    display: flex; gap: 10px; margin-bottom: 24px;
+    opacity: 0; animation: fadeUp 0.6s 0.50s forwards;
+  }
+  .stat-card {
+    flex: 1; background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 12px; text-align: center;
+    box-shadow: var(--shadow-sm);
+    transition: border-color var(--trans), box-shadow var(--trans);
+  }
+  .stat-card:hover { border-color: var(--border-mid); box-shadow: var(--shadow); }
+  .stat-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 26px; font-weight: 400; color: var(--blue); line-height: 1;
+  }
+  .stat-label {
+    font-size: 9.5px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--text-dim); margin-top: 4px;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     ADD CARD
+  ═══════════════════════════════════════════════════════ */
+  .add-section {
+    opacity: 0; animation: fadeUp 0.6s 0.56s forwards;
+    margin-bottom: 20px;
+  }
+  .add-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 20px 16px;
+    box-shadow: var(--shadow-sm);
+    transition: border-color var(--trans), box-shadow var(--trans);
+  }
+  .add-card:focus-within {
+    border-color: var(--border-mid);
+    box-shadow: var(--shadow-blue);
+  }
+  .add-top-row { display: flex; gap: 10px; align-items: center; }
+  .field-label {
+    display: block; font-size: 10px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--text-dim); margin-bottom: 6px;
+  }
+  .field-input {
+    width: 100%; background: transparent; border: none; outline: none;
+    font-family: 'Playfair Display', serif;
+    font-size: 19px; font-weight: 400; color: var(--text);
+    caret-color: var(--blue); padding: 0; line-height: 1.3;
+  }
+  .field-input::placeholder { color: var(--text-dim); font-style: italic; }
+
+  /* expand area */
+  .add-expand {
+    max-height: 0; overflow: hidden;
+    transition: max-height 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease;
+    opacity: 0;
+  }
+  .add-card.expanded .add-expand { max-height: 260px; opacity: 1; }
+  .expand-inner {
+    padding-top: 14px; margin-top: 14px;
+    border-top: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .field-textarea {
+    width: 100%; background: transparent; border: none; outline: none;
+    font-family: 'Inter', sans-serif;
+    font-size: 13.5px; font-weight: 300;
+    color: var(--text-muted); caret-color: var(--blue);
+    resize: none; line-height: 1.6; max-height: 80px; overflow-y: auto;
+  }
+  .field-textarea::placeholder { color: var(--text-dim); }
+
+  /* deadline row */
+  .deadline-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .deadline-label-txt {
+    font-size: 10px; letter-spacing: 0.15em;
+    text-transform: uppercase; color: var(--text-dim); flex-shrink: 0;
+  }
+  .deadline-input {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 5px 10px; font-family: 'Inter', sans-serif;
+    font-size: 12px; color: var(--text); outline: none;
+    cursor: pointer; transition: border-color var(--trans);
+  }
+  .deadline-input:focus { border-color: var(--border-mid); }
+
+  /* priority row */
+  .priority-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .priority-label-txt {
+    font-size: 10px; letter-spacing: 0.15em;
+    text-transform: uppercase; color: var(--text-dim); flex-shrink: 0;
+  }
+  .priority-opts { display: flex; gap: 6px; }
+  .priority-opt {
+    padding: 4px 13px; border-radius: 100px;
+    border: 1px solid var(--border); background: transparent;
+    font-size: 11px; font-weight: 500; color: var(--text-muted);
+    cursor: pointer; transition: all var(--trans);
+  }
+  .priority-opt:hover { border-color: var(--border-mid); }
+  .priority-opt.sel-high   { background: var(--danger-dim);  border-color: rgba(224,59,59,0.3);  color: var(--danger); }
+  .priority-opt.sel-medium { background: var(--warn-dim);    border-color: rgba(196,124,20,0.3); color: var(--warn); }
+  .priority-opt.sel-low    { background: var(--success-dim); border-color: rgba(30,138,94,0.3);  color: var(--success); }
+
+  /* add button */
+  .btn-add {
+    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; border-radius: 50%;
+    border: none; background: var(--blue); color: #fff;
+    cursor: pointer; font-size: 22px; font-weight: 300;
+    transition: all var(--trans); flex-shrink: 0;
+    box-shadow: 0 2px 12px rgba(37,99,235,0.3);
+    line-height: 1;
+  }
+  .btn-add:hover {
+    background: #1d4ed8;
+    transform: scale(1.07) rotate(90deg);
+    box-shadow: 0 4px 20px rgba(37,99,235,0.4);
+  }
+  .btn-add:active { transform: scale(0.94) rotate(90deg); }
+
+  /* ═══════════════════════════════════════════════════════
+     FILTER BAR
+  ═══════════════════════════════════════════════════════ */
+  .filter-bar {
+    display: flex; gap: 6px; margin-bottom: 16px;
+    opacity: 0; animation: fadeUp 0.6s 0.62s forwards;
+    flex-wrap: wrap;
+  }
+  .filter-btn {
+    padding: 7px 16px; border-radius: 100px;
+    border: 1px solid var(--border); background: var(--bg2);
+    font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 400;
+    color: var(--text-muted); cursor: pointer;
+    transition: all var(--trans); box-shadow: var(--shadow-sm);
+  }
+  .filter-btn:hover { border-color: var(--border-mid); color: var(--text); }
+  .filter-btn.active {
+    background: var(--blue); border-color: var(--blue); color: #fff;
+    box-shadow: 0 2px 10px rgba(37,99,235,0.25);
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     GOALS LIST
+  ═══════════════════════════════════════════════════════ */
+  #goals-list {
+    display: flex; flex-direction: column; gap: 10px;
+    opacity: 0; animation: fadeUp 0.6s 0.68s forwards;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     GOAL CARD
+  ═══════════════════════════════════════════════════════ */
+  .goal-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 14px 14px 20px;
+    display: flex; align-items: flex-start; gap: 12px;
+    transition: border-color var(--trans), transform var(--trans), box-shadow var(--trans);
+    position: relative; overflow: hidden;
+    animation: cardIn 0.4s cubic-bezier(0.25,0,0.3,1) both;
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* priority stripe */
+  .goal-card::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    border-radius: 16px 0 0 16px;
+    background: var(--blue); opacity: 0.3;
+    transition: opacity var(--trans);
+  }
+  .goal-card[data-priority="high"]::before   { background: var(--danger); opacity: 0.6; }
+  .goal-card[data-priority="medium"]::before { background: var(--warn);   opacity: 0.6; }
+  .goal-card[data-priority="low"]::before    { background: var(--success);opacity: 0.6; }
+
+  .goal-card:hover { border-color: var(--border-mid); box-shadow: var(--shadow); transform: translateY(-1px); }
+  .goal-card:hover::before { opacity: 1; }
+  .goal-card.completed { opacity: 0.58; }
+  .goal-card.completed::before { background: var(--success) !important; opacity: 0.35 !important; }
+  .goal-card.removing { animation: cardOut 0.35s cubic-bezier(0.4,0,1,1) forwards; }
+  .goal-card.shake { animation: shake 0.4s cubic-bezier(0.36,0.07,0.19,0.97) both; }
+
+  /* shimmer on complete */
+  .goal-card.completing::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(105deg, transparent 40%, rgba(37,99,235,0.07) 50%, transparent 60%);
+    background-size: 200% 100%;
+    animation: shimmerBlue 0.65s ease forwards;
+    border-radius: var(--radius);
+    pointer-events: none;
+  }
+
+  /* ── Checkbox ── */
+  .check-btn {
+    width: 24px; height: 24px; border-radius: 50%;
+    border: 2px solid var(--blue-light); background: transparent;
+    cursor: pointer; flex-shrink: 0; position: relative;
+    transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    margin-top: 3px;
+  }
+  .check-btn::after {
+    content: ''; position: absolute; inset: 3px; border-radius: 50%;
+    background: var(--blue); transform: scale(0);
+    transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  .check-btn:hover { border-color: var(--blue); transform: scale(1.1); box-shadow: 0 0 0 4px var(--blue-dim); }
+  .goal-card.completed .check-btn { border-color: var(--success); background: var(--success-dim); }
+  .goal-card.completed .check-btn::after { transform: scale(0) !important; }
+  .goal-card.completed .check-btn::before {
+    content: '';
+    position: absolute; inset: 0; z-index: 1;
+    background: url("data:image/svg+xml,%3Csvg viewBox='0 0 14 14' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M3 7l3 3 5-5' stroke='%231e8a5e' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/14px no-repeat;
+  }
+
+  /* ── Card content area ── */
+  .goal-content { flex: 1; min-width: 0; }
+
+  /* ── Title (with inline edit support) ── */
+  .goal-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 17px; font-weight: 400; line-height: 1.35;
+    color: var(--text); word-break: break-word;
+    transition: color var(--trans);
+    outline: none;
+  }
+  .goal-title[contenteditable="true"] {
+    border-bottom: 1.5px solid var(--blue-light);
+    padding-bottom: 2px;
+    caret-color: var(--blue);
+  }
+  .goal-title[contenteditable="true"]:focus {
+    border-bottom-color: var(--blue);
+  }
+  .goal-card.completed .goal-title { text-decoration: line-through; color: var(--text-dim); }
+
+  /* ── Description ── */
+  .goal-desc { font-size: 12.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.55; font-weight: 300; }
+
+  /* ── Deadline chip ── */
+  .deadline-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10.5px; font-weight: 500;
+    padding: 2px 9px; border-radius: 100px;
+    letter-spacing: 0.03em;
+  }
+  .deadline-chip.urgent   { background: var(--danger-dim);  color: var(--danger); }
+  .deadline-chip.soon     { background: var(--warn-dim);    color: var(--warn); }
+  .deadline-chip.ok       { background: var(--success-dim); color: var(--success); }
+  .deadline-chip.overdue  { background: var(--danger-dim);  color: var(--danger); }
+  .deadline-chip.done-dl  { background: var(--bg3);         color: var(--text-dim); }
+
+  /* ── Goal footer ── */
+  .goal-footer {
+    display: flex; align-items: center; gap: 7px;
+    margin-top: 9px; flex-wrap: wrap;
+  }
+  .goal-date { font-size: 10.5px; color: var(--text-dim); }
+  .goal-badge {
+    font-size: 10px; font-weight: 500;
+    letter-spacing: 0.06em; padding: 2px 9px; border-radius: 100px;
+  }
+  .badge-active  { background: var(--blue-dim);    color: var(--blue); }
+  .badge-done    { background: var(--success-dim); color: var(--success); }
+  .badge-high    { background: var(--danger-dim);  color: var(--danger); }
+  .badge-medium  { background: var(--warn-dim);    color: var(--warn); }
+  .badge-low     { background: var(--success-dim); color: var(--success); }
+
+  /* ── Sub-tasks ── */
+  .subtasks-section { margin-top: 10px; }
+
+  .subtasks-list { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+
+  .subtask-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 0;
+  }
+  .subtask-check {
+    width: 16px; height: 16px; border-radius: 4px;
+    border: 1.5px solid var(--blue-light);
+    background: transparent; cursor: pointer; flex-shrink: 0;
+    position: relative; transition: all 0.2s;
+  }
+  .subtask-check:hover { border-color: var(--blue); }
+  .subtask-check.checked {
+    background: var(--success); border-color: var(--success);
+  }
+  .subtask-check.checked::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: url("data:image/svg+xml,%3Csvg viewBox='0 0 12 12' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M2 6l3 3 5-4' stroke='%23fff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/11px no-repeat;
+  }
+  .subtask-text {
+    font-size: 12.5px; color: var(--text-muted); flex: 1;
+    line-height: 1.4; word-break: break-word;
+    transition: all var(--trans);
+  }
+  .subtask-text.done { text-decoration: line-through; color: var(--text-dim); }
+  .subtask-remove {
+    width: 18px; height: 18px; border-radius: 4px;
+    border: none; background: transparent;
+    color: var(--text-dim); cursor: pointer; font-size: 10px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all var(--trans); flex-shrink: 0; opacity: 0;
+    padding: 0;
+  }
+  .subtask-row:hover .subtask-remove { opacity: 1; }
+  .subtask-remove:hover { background: var(--danger-dim); color: var(--danger); }
+
+  /* subtask input row */
+  .subtask-add-row {
+    display: flex; gap: 6px; align-items: center;
+  }
+  .subtask-input {
+    flex: 1; background: var(--bg3);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 5px 10px; font-family: 'Inter', sans-serif;
+    font-size: 12px; color: var(--text); outline: none;
+    transition: border-color var(--trans);
+  }
+  .subtask-input:focus { border-color: var(--border-mid); }
+  .subtask-input::placeholder { color: var(--text-dim); }
+  .subtask-add-btn {
+    padding: 5px 12px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border-mid); background: var(--blue-dim);
+    font-size: 11px; font-weight: 500; color: var(--blue);
+    cursor: pointer; transition: all var(--trans); flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .subtask-add-btn:hover { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+  /* subtask progress bar */
+  .subtask-progress {
+    height: 3px; background: var(--bg3);
+    border-radius: 100px; margin-bottom: 8px; overflow: hidden;
+  }
+  .subtask-progress-fill {
+    height: 100%; background: var(--success);
+    border-radius: 100px;
+    transition: width 0.4s cubic-bezier(0.4,0,0.2,1);
+  }
+
+  /* subtask toggle link */
+  .subtask-toggle {
+    font-size: 11px; color: var(--blue);
+    cursor: pointer; margin-top: 6px;
+    display: inline-flex; align-items: center; gap: 4px;
+    transition: opacity var(--trans); user-select: none;
+    background: none; border: none; padding: 0; font-family: 'Inter', sans-serif;
+  }
+  .subtask-toggle:hover { opacity: 0.7; }
+  .subtask-body {
+    max-height: 0; overflow: hidden;
+    transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.28s;
+    opacity: 0;
+  }
+  .subtask-body.open { max-height: 400px; opacity: 1; }
+
+  /* ── Card actions (right side) ── */
+  .card-actions {
+    display: flex; flex-direction: column; gap: 4px;
+    flex-shrink: 0; align-items: flex-end;
+  }
+  .btn-delete {
+    width: 28px; height: 28px; border-radius: var(--radius-sm);
+    border: 1px solid transparent; background: transparent;
+    color: var(--text-dim); cursor: pointer; font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all var(--trans);
+  }
+  @media (hover: hover) {
+    .btn-delete { opacity: 0; }
+    .goal-card:hover .btn-delete { opacity: 1; }
+  }
+  .btn-delete:hover { background: var(--danger-dim); border-color: rgba(224,59,59,0.2); color: var(--danger); }
+  .btn-delete.confirming {
+    background: var(--danger-dim); border-color: rgba(224,59,59,0.3);
+    color: var(--danger); opacity: 1 !important;
+    font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
+    width: auto; padding: 0 8px;
+  }
+
+  .btn-focus-goal {
+    width: 28px; height: 28px; border-radius: var(--radius-sm);
+    border: 1px solid transparent; background: transparent;
+    color: var(--text-dim); cursor: pointer; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all var(--trans);
+  }
+  @media (hover: hover) {
+    .btn-focus-goal { opacity: 0; }
+    .goal-card:hover .btn-focus-goal { opacity: 1; }
+  }
+  .btn-focus-goal:hover { background: var(--blue-dim); border-color: var(--border-mid); color: var(--blue); }
+
+  /* ═══════════════════════════════════════════════════════
+     FOCUS MODE
+  ═══════════════════════════════════════════════════════ */
+  .focus-overlay {
+    position: fixed; inset: 0; z-index: 8000;
+    background: rgba(247,249,252,0.96);
+    backdrop-filter: blur(20px);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 24px;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.4s ease;
+  }
+  .focus-overlay.open { opacity: 1; pointer-events: all; }
+
+  .focus-inner {
+    width: 100%; max-width: 520px;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 24px;
+    transform: translateY(20px);
+    transition: transform 0.45s cubic-bezier(0.34,1.3,0.64,1);
+  }
+  .focus-overlay.open .focus-inner { transform: translateY(0); }
+
+  .focus-eyebrow {
+    font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--blue); font-weight: 500;
+  }
+  .focus-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(26px, 6vw, 42px);
+    font-weight: 400; line-height: 1.2;
+    color: var(--text); text-align: center;
+    letter-spacing: -0.01em;
+  }
+  .focus-desc {
+    font-size: 15px; color: var(--text-muted);
+    text-align: center; line-height: 1.65; font-weight: 300;
+    max-width: 400px;
+  }
+  .focus-deadline {
+    font-size: 13px; color: var(--text-muted); text-align: center;
+  }
+  .focus-subtasks {
+    width: 100%; background: var(--bg2);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px 20px; box-shadow: var(--shadow-sm);
+  }
+  .focus-subtasks-title {
+    font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase;
+    color: var(--text-dim); margin-bottom: 12px;
+  }
+  .focus-subtask-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .focus-subtask-row:last-child { border-bottom: none; }
+  .focus-subtask-text {
+    font-size: 13.5px; color: var(--text-muted); flex: 1;
+    transition: all var(--trans);
+  }
+  .focus-subtask-text.done { text-decoration: line-through; color: var(--text-dim); }
+
+  .focus-actions {
+    display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+  }
+  .btn-focus-complete {
+    padding: 12px 28px; border-radius: 100px;
+    border: none; background: var(--blue); color: #fff;
+    font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 500;
+    cursor: pointer; box-shadow: 0 2px 12px rgba(37,99,235,0.3);
+    transition: all var(--trans);
+  }
+  .btn-focus-complete:hover { background: #1d4ed8; transform: scale(1.03); }
+  .btn-focus-complete.already-done {
+    background: var(--success-dim); color: var(--success);
+    border: 1px solid rgba(30,138,94,0.3); box-shadow: none;
+  }
+  .btn-focus-close {
+    padding: 12px 24px; border-radius: 100px;
+    border: 1px solid var(--border); background: var(--bg2); color: var(--text-muted);
+    font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 400;
+    cursor: pointer; transition: all var(--trans);
+  }
+  .btn-focus-close:hover { border-color: var(--border-mid); color: var(--text); }
+
+  .focus-nav {
+    display: flex; gap: 8px; align-items: center;
+  }
+  .btn-focus-nav {
+    width: 36px; height: 36px; border-radius: 50%;
+    border: 1px solid var(--border); background: var(--bg2);
+    color: var(--text-muted); cursor: pointer; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all var(--trans);
+  }
+  .btn-focus-nav:hover { border-color: var(--border-mid); color: var(--text); }
+  .btn-focus-nav:disabled { opacity: 0.3; cursor: not-allowed; }
+  .focus-counter {
+    font-size: 12px; color: var(--text-dim); letter-spacing: 0.06em;
+    min-width: 50px; text-align: center;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     EMPTY STATE
+  ═══════════════════════════════════════════════════════ */
+  #empty-state { text-align: center; padding: 72px 24px; display: none; }
+  #empty-state.visible { display: block; }
+  .empty-icon {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--blue-dim); border: 1px solid var(--border-mid);
+    margin: 0 auto 18px;
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+  }
+  .empty-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 22px; font-style: italic; font-weight: 400;
+    color: var(--text-muted); margin-bottom: 6px;
+  }
+  .empty-sub { font-size: 13px; color: var(--text-dim); }
+
+  /* ═══════════════════════════════════════════════════════
+     FOOTER
+  ═══════════════════════════════════════════════════════ */
+  footer {
+    margin-top: 56px; text-align: center;
+    font-size: 11px; color: var(--text-dim); letter-spacing: 0.08em;
+    opacity: 0; animation: fadeUp 0.6s 1s forwards;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     KEYFRAMES
+  ═══════════════════════════════════════════════════════ */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(12px) scale(0.985); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes cardOut {
+    to { opacity: 0; transform: translateX(28px) scale(0.96); max-height: 0; padding: 0; margin: 0; overflow: hidden; }
+  }
+  @keyframes celebFade {
+    0%   { opacity: 0; transform: scale(0.88); }
+    14%  { opacity: 1; transform: scale(1.02); }
+    72%  { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(1.04); }
+  }
+  @keyframes shake {
+    10%,90%       { transform: translateX(-1px); }
+    20%,80%       { transform: translateX(2px); }
+    30%,50%,70%   { transform: translateX(-3px); }
+    40%,60%       { transform: translateX(3px); }
+  }
+  @keyframes shimmerBlue {
+    from { background-position: -200% 0; }
+    to   { background-position:  200% 0; }
+  }
+  @keyframes ringPulse {
+    0%  { box-shadow: 0 0 0 0 rgba(37,99,235,0.35); }
+    70% { box-shadow: 0 0 0 10px rgba(37,99,235,0); }
+    100%{ box-shadow: 0 0 0 0 rgba(37,99,235,0); }
+  }
+  @keyframes streakPop {
+    0%  { transform: scale(1); }
+    50% { transform: scale(1.18); }
+    100%{ transform: scale(1); }
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     RESPONSIVE
+  ═══════════════════════════════════════════════════════ */
+  @media (max-width: 480px) {
+    header { padding: 32px 0 18px; }
+    .stats-row { gap: 8px; }
+    .add-top-row { flex-direction: column; align-items: stretch; }
+    .btn-add { width: 100%; border-radius: 100px; height: 42px; }
+    .btn-add:hover { transform: none; }
+    .focus-overlay { justify-content: flex-start; padding-top: 60px; }
+  }
+  </style>
+</head>
+<body>
+
+  <!-- Fixed UI -->
+  <div class="scroll-line" id="scroll-line"></div>
+  <canvas id="particle-canvas"></canvas>
+  <div class="celebration-overlay" id="celebration-overlay">
+    <span class="celebration-text" id="celebration-text"></span>
+  </div>
+  <div id="toast"></div>
+
+  <!-- ═══ FOCUS MODE OVERLAY ═══ -->
+  <div class="focus-overlay" id="focus-overlay" role="dialog" aria-modal="true" aria-label="Modo Foco">
+    <div class="focus-inner" id="focus-inner">
+      <p class="focus-eyebrow">— Modo Foco —</p>
+      <h2 class="focus-title" id="focus-title"></h2>
+      <p class="focus-desc" id="focus-desc"></p>
+      <p class="focus-deadline" id="focus-deadline-txt"></p>
+      <div class="focus-subtasks" id="focus-subtasks-wrap" style="display:none"></div>
+      <div class="focus-nav">
+        <button class="btn-focus-nav" id="focus-prev" title="Objetivo anterior">‹</button>
+        <span class="focus-counter" id="focus-counter"></span>
+        <button class="btn-focus-nav" id="focus-next" title="Próximo objetivo">›</button>
+      </div>
+      <div class="focus-actions">
+        <button class="btn-focus-complete" id="focus-complete-btn">Marcar como concluído</button>
+        <button class="btn-focus-close" id="focus-close-btn">Sair do foco</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ MAIN APP ═══ -->
+  <div class="app">
+
+    <!-- Daily quote -->
+    <div class="quote-banner" id="quote-banner">
+      <span class="quote-icon">❝</span>
+      <div class="quote-body">
+        <p class="quote-text" id="quote-text"></p>
+        <p class="quote-author" id="quote-author"></p>
+      </div>
+    </div>
+
+    <!-- Header -->
+    <header>
+      <p class="header-eyebrow">Realize o que importa</p>
+      <h1 class="header-title">Seus <em>Objetivos</em></h1>
+      <p class="header-sub">Defina com clareza. Avance com intenção.<br>Celebre cada conquista.</p>
+    </header>
+
+    <!-- Streak -->
+    <div class="streak-wrap">
+      <div class="streak-badge" id="streak-badge">
+        <span class="streak-fire">🔥</span>
+        <span id="streak-label">Carregando...</span>
+      </div>
+    </div>
+
+    <!-- Progress ring -->
+    <div class="progress-section">
+      <div class="progress-ring-wrap">
+        <svg width="110" height="110" viewBox="0 0 110 110">
+          <circle class="ring-bg"   cx="55" cy="55" r="45"/>
+          <circle class="ring-fill" id="ring-fill" cx="55" cy="55" r="45"/>
+        </svg>
+        <div class="progress-inner">
+          <div class="progress-pct"   id="ring-pct">0%</div>
+          <div class="progress-label">Concluído</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-value" id="stat-total">0</div><div class="stat-label">Total</div></div>
+      <div class="stat-card"><div class="stat-value" id="stat-active">0</div><div class="stat-label">Em progresso</div></div>
+      <div class="stat-card"><div class="stat-value" id="stat-done">0</div><div class="stat-label">Concluídos</div></div>
+    </div>
+
+    <!-- Add form -->
+    <div class="add-section">
+      <div class="add-card" id="add-card">
+        <div class="add-top-row">
+          <div style="flex:1">
+            <label class="field-label" for="goal-input">Novo objetivo</label>
+            <input class="field-input" id="goal-input" type="text"
+              placeholder="O que você quer conquistar?" autocomplete="off" />
+          </div>
+          <button class="btn-add" id="btn-add" title="Adicionar (Enter)" aria-label="Adicionar objetivo">+</button>
+        </div>
+        <div class="add-expand" id="add-expand">
+          <div class="expand-inner">
+            <textarea class="field-textarea" id="goal-desc" rows="2"
+              placeholder="Descreva seu objetivo (opcional)..."></textarea>
+            <div class="deadline-row">
+              <span class="deadline-label-txt">Prazo</span>
+              <input type="date" class="deadline-input" id="goal-deadline" />
+            </div>
+            <div class="priority-row">
+              <span class="priority-label-txt">Prioridade</span>
+              <div class="priority-opts" id="priority-opts">
+                <button class="priority-opt" data-p="high">Alta</button>
+                <button class="priority-opt sel-medium" data-p="medium">Média</button>
+                <button class="priority-opt" data-p="low">Baixa</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-bar" id="filter-bar">
+      <button class="filter-btn active" data-filter="all">Todos</button>
+      <button class="filter-btn" data-filter="active">Em progresso</button>
+      <button class="filter-btn" data-filter="done">Concluídos</button>
+    </div>
+
+    <!-- Goals list -->
+    <div id="goals-list" role="list"></div>
+
+    <!-- Empty state -->
+    <div id="empty-state" role="status">
+      <div class="empty-icon">◎</div>
+      <p class="empty-title">Nenhum objetivo aqui</p>
+      <p class="empty-sub">Adicione seu primeiro objetivo acima e comece sua jornada.</p>
+    </div>
+
+    <footer>Dados salvos localmente no seu dispositivo · Feito com intenção</footer>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       JAVASCRIPT
+  ═══════════════════════════════════════════════════════ -->
+  <script>
+  (() => {
+    'use strict';
+
+    /* ═══════════════════════════════════════════════
+       DATA & CONSTANTS
+    ═══════════════════════════════════════════════ */
+    let goals = [];
+    let currentFilter    = 'all';
+    let selectedPriority = 'medium';
+    let deleteConfirmId  = null;
+    let deleteConfirmTimer = null;
+    let focusIndex       = 0;   // index into active goals list
+
+    const CIRCUMFERENCE = 2 * Math.PI * 45; // ≈ 282.74
+
+    const CELEBRATIONS = [
+      'Objetivo alcançado. ✦',
+      'Você conseguiu. Brilhante.',
+      'Mais uma conquista sua.',
+      'Isso é progresso real.',
+      'Continue assim. Você é incrível.',
+      'Feito. A próxima conquista te espera.',
+    ];
+
+    const QUOTES = [
+      { text: 'A jornada de mil milhas começa com um único passo.', author: '— Lao-Tsé' },
+      { text: 'Não é sobre ter tempo, é sobre fazer do tempo.', author: '— Anônimo' },
+      { text: 'Defina seus objetivos com clareza e aja com coragem.', author: '— Anônimo' },
+      { text: 'O sucesso é a soma de pequenos esforços repetidos dia após dia.', author: '— Robert Collier' },
+      { text: 'Um objetivo sem um plano é apenas um desejo.', author: '— Antoine de Saint-Exupéry' },
+      { text: 'Comece onde você está. Use o que você tem. Faça o que puder.', author: '— Arthur Ashe' },
+      { text: 'Grandes realizações são alcançadas não pela força, mas pela perseverança.', author: '— Samuel Johnson' },
+      { text: 'O segredo de avançar é começar.', author: '— Mark Twain' },
+      { text: 'Cada dia é uma nova chance de mudar sua vida.', author: '— Anônimo' },
+      { text: 'O único modo de fazer um excelente trabalho é amar o que você faz.', author: '— Steve Jobs' },
+      { text: 'Não deixe o medo de errar impedir de tentar.', author: '— Anônimo' },
+      { text: 'Disciplina é a ponte entre objetivos e realizações.', author: '— Jim Rohn' },
+      { text: 'Tudo parece impossível até que seja feito.', author: '— Nelson Mandela' },
+      { text: 'Seja a mudança que você quer ver no mundo.', author: '— Mahatma Gandhi' },
+    ];
+
+    /* ═══════════════════════════════════════════════
+       STORAGE
+    ═══════════════════════════════════════════════ */
+    function save() {
+      try { localStorage.setItem('foco_v4', JSON.stringify(goals)); } catch(e) {}
+    }
+    function load() {
+      try {
+        const raw = localStorage.getItem('foco_v4');
+        if (raw) goals = JSON.parse(raw);
+        // Migrate from v3 (no subtasks / deadline fields)
+        goals.forEach(g => {
+          if (!Array.isArray(g.subtasks)) g.subtasks = [];
+          if (g.deadline === undefined) g.deadline = null;
+        });
+      } catch(e) { goals = []; }
+    }
+
+    /* ═══════════════════════════════════════════════
+       STREAK
+    ═══════════════════════════════════════════════ */
+    function getStreak() {
+      try {
+        const raw = localStorage.getItem('foco_streak');
+        return raw ? JSON.parse(raw) : { count: 0, lastDate: null };
+      } catch(e) { return { count: 0, lastDate: null }; }
+    }
+    function saveStreak(s) {
+      try { localStorage.setItem('foco_streak', JSON.stringify(s)); } catch(e) {}
+    }
+    function touchStreak() {
+      const today = new Date().toDateString();
+      const s = getStreak();
+      if (s.lastDate === today) return;
+      const yesterday = new Date(Date.now() - 86400000).toDateString();
+      s.count = s.lastDate === yesterday ? s.count + 1 : 1;
+      s.lastDate = today;
+      saveStreak(s);
+      renderStreak();
+    }
+    function renderStreak() {
+      const s = getStreak();
+      const badge  = document.getElementById('streak-badge');
+      const label  = document.getElementById('streak-label');
+      if (s.count >= 1) {
+        badge.classList.add('active');
+        label.innerHTML = `<span class="streak-num">${s.count}</span>&nbsp;dia${s.count !== 1 ? 's' : ''} consecutivo${s.count !== 1 ? 's' : ''}`;
+        badge.style.animation = 'streakPop 0.5s ease';
+        setTimeout(() => badge.style.animation = '', 500);
+      } else {
+        badge.classList.remove('active');
+        label.textContent = 'Nenhum dia consecutivo ainda';
+      }
+    }
+
+    /* ═══════════════════════════════════════════════
+       DAILY QUOTE
+    ═══════════════════════════════════════════════ */
+    function renderQuote() {
+      // Deterministic by day-of-year so it only changes daily
+      const now  = new Date();
+      const doy  = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
+      const q    = QUOTES[doy % QUOTES.length];
+      document.getElementById('quote-text').textContent   = q.text;
+      document.getElementById('quote-author').textContent = q.author;
+    }
+
+    /* ═══════════════════════════════════════════════
+       DEADLINE HELPERS
+    ═══════════════════════════════════════════════ */
+    function deadlineChipHtml(deadline, completed) {
+      if (!deadline) return '';
+      if (completed) return `<span class="deadline-chip done-dl">📅 ${fmtDeadline(deadline)}</span>`;
+      const today = new Date(); today.setHours(0,0,0,0);
+      const dl    = new Date(deadline + 'T00:00:00');
+      const diff  = Math.round((dl - today) / 86400000);
+      if (diff < 0)  return `<span class="deadline-chip overdue">⚠ Vencido (${Math.abs(diff)}d atrás)</span>`;
+      if (diff === 0) return `<span class="deadline-chip urgent">🔴 Vence hoje</span>`;
+      if (diff <= 3)  return `<span class="deadline-chip urgent">🔴 ${diff}d restante${diff !== 1 ? 's' : ''}</span>`;
+      if (diff <= 7)  return `<span class="deadline-chip soon">🟡 ${diff}d restante${diff !== 1 ? 's' : ''}</span>`;
+      return `<span class="deadline-chip ok">🟢 ${diff}d restante${diff !== 1 ? 's' : ''}</span>`;
+    }
+    function fmtDeadline(dl) {
+      if (!dl) return '';
+      const [y,m,d] = dl.split('-');
+      return `${d}/${m}/${y}`;
+    }
+    function deadlineTextForFocus(deadline, completed) {
+      if (!deadline) return '';
+      if (completed) return `Concluído · Prazo era ${fmtDeadline(deadline)}`;
+      const today = new Date(); today.setHours(0,0,0,0);
+      const dl    = new Date(deadline + 'T00:00:00');
+      const diff  = Math.round((dl - today) / 86400000);
+      if (diff < 0)  return `⚠ Prazo vencido há ${Math.abs(diff)} dia(s)`;
+      if (diff === 0) return '🔴 Prazo: hoje!';
+      return `📅 Prazo em ${diff} dia(s) · ${fmtDeadline(deadline)}`;
+    }
+
+    /* ═══════════════════════════════════════════════
+       UTILS
+    ═══════════════════════════════════════════════ */
+    function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+    function fmtDate(ts) {
+      return new Date(ts).toLocaleDateString('pt-BR', { day:'2-digit', month:'short', year:'numeric' });
+    }
+    function filtered() {
+      if (currentFilter === 'active') return goals.filter(g => !g.completed);
+      if (currentFilter === 'done')   return goals.filter(g =>  g.completed);
+      return goals;
+    }
+    function escHtml(s) {
+      if (!s) return '';
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    /* ═══════════════════════════════════════════════
+       STATS + RING
+    ═══════════════════════════════════════════════ */
+    function updateStats() {
+      const total  = goals.length;
+      const done   = goals.filter(g => g.completed).length;
+      const active = total - done;
+      const pct    = total > 0 ? Math.round(done / total * 100) : 0;
+      animNum('stat-total',  total);
+      animNum('stat-active', active);
+      animNum('stat-done',   done);
+      const offset = CIRCUMFERENCE - (pct / 100) * CIRCUMFERENCE;
+      document.getElementById('ring-fill').style.strokeDashoffset = offset;
+      animNum('ring-pct', pct, '%');
+    }
+    function animNum(id, target, suffix = '') {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const cur = parseInt(el.textContent) || 0;
+      if (cur === target) { el.textContent = target + suffix; return; }
+      const dur = 500, t0 = performance.now();
+      function step(now) {
+        const p = Math.min((now - t0) / dur, 1);
+        const e = 1 - Math.pow(1 - p, 3);
+        el.textContent = Math.round(cur + (target - cur) * e) + suffix;
+        if (p < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    }
+
+    /* ═══════════════════════════════════════════════
+       RENDER
+    ═══════════════════════════════════════════════ */
+    function render() {
+      const list  = document.getElementById('goals-list');
+      const empty = document.getElementById('empty-state');
+      const items = filtered();
+      list.innerHTML = '';
+      if (items.length === 0) {
+        empty.classList.add('visible');
+      } else {
+        empty.classList.remove('visible');
+        items.forEach((g, i) => list.appendChild(buildCard(g, i)));
+      }
+      updateStats();
+    }
+
+    /* ── Build card ── */
+    function buildCard(goal, idx) {
+      const card = document.createElement('div');
+      card.className = 'goal-card' + (goal.completed ? ' completed' : '');
+      card.dataset.id = goal.id;
+      card.dataset.priority = goal.priority || 'none';
+      card.style.animationDelay = (idx * 0.05) + 's';
+      card.setAttribute('role', 'listitem');
+
+      const pLabel = { high: 'Alta', medium: 'Média', low: 'Baixa' }[goal.priority] || '';
+      const pBadge = goal.priority
+        ? `<span class="goal-badge badge-${goal.priority}">${pLabel}</span>` : '';
+
+      const subtasksDone  = goal.subtasks.filter(s => s.done).length;
+      const subtasksTotal = goal.subtasks.length;
+      const subtaskToggle = subtasksTotal > 0
+        ? `<button class="subtask-toggle" data-id="${goal.id}">
+             <span class="st-arrow">▸</span> ${subtasksDone}/${subtasksTotal} etapas
+           </button>` : '';
+
+      const subtaskProgressBar = subtasksTotal > 0
+        ? `<div class="subtask-progress"><div class="subtask-progress-fill" style="width:${subtasksTotal > 0 ? (subtasksDone/subtasksTotal*100) : 0}%"></div></div>`
+        : '';
+
+      card.innerHTML = `
+        <button class="check-btn" title="${goal.completed ? 'Reabrir objetivo' : 'Marcar como concluído'}" aria-label="${goal.completed ? 'Reabrir objetivo' : 'Concluir objetivo'}"></button>
+        <div class="goal-content">
+          <div class="goal-title" data-id="${goal.id}" title="Clique duplo para editar">${escHtml(goal.title)}</div>
+          ${goal.desc ? `<div class="goal-desc">${escHtml(goal.desc)}</div>` : ''}
+          <div class="goal-footer">
+            <span class="goal-date">${fmtDate(goal.createdAt)}</span>
+            <span class="goal-badge ${goal.completed ? 'badge-done' : 'badge-active'}">${goal.completed ? '✓ Concluído' : '● Ativo'}</span>
+            ${pBadge}
+            ${deadlineChipHtml(goal.deadline, goal.completed)}
+          </div>
+          ${subtaskProgressBar}
+          ${subtaskToggle}
+          <div class="subtask-body" id="stbody-${goal.id}">
+            ${buildSubtasksHtml(goal)}
+          </div>
+        </div>
+        <div class="card-actions">
+          <button class="btn-focus-goal" title="Modo foco" aria-label="Abrir no modo foco">◎</button>
+          <button class="btn-delete" title="Remover objetivo" aria-label="Remover objetivo">✕</button>
+        </div>
+      `;
+
+      /* ── Listeners ── */
+      // Checkbox
+      card.querySelector('.check-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        toggleGoal(goal.id, card);
+      });
+
+      // Delete
+      card.querySelector('.btn-delete').addEventListener('click', e => {
+        e.stopPropagation();
+        handleDelete(goal.id, card, e.currentTarget);
+      });
+
+      // Focus mode
+      card.querySelector('.btn-focus-goal').addEventListener('click', e => {
+        e.stopPropagation();
+        openFocusMode(goal.id);
+      });
+
+      // Inline edit (double click on title)
+      const titleEl = card.querySelector('.goal-title');
+      titleEl.addEventListener('dblclick', e => {
+        if (goal.completed) return; // don't edit completed
+        e.stopPropagation();
+        startInlineEdit(titleEl, goal);
+      });
+
+      // Subtask toggle
+      const stToggle = card.querySelector('.subtask-toggle');
+      if (stToggle) {
+        stToggle.addEventListener('click', e => {
+          e.stopPropagation();
+          const body = document.getElementById('stbody-' + goal.id);
+          const arrow = stToggle.querySelector('.st-arrow');
+          const isOpen = body.classList.toggle('open');
+          arrow.textContent = isOpen ? '▾' : '▸';
+        });
+      }
+
+      // Subtask events (delegated within card)
+      card.addEventListener('click', e => {
+        const sc = e.target.closest('.subtask-check');
+        const sr = e.target.closest('.subtask-remove');
+        const ab = e.target.closest('.subtask-add-btn');
+        if (sc) { e.stopPropagation(); toggleSubtask(goal.id, sc.dataset.sid, card); return; }
+        if (sr) { e.stopPropagation(); removeSubtask(goal.id, sr.dataset.sid, card); return; }
+        if (ab) { e.stopPropagation(); addSubtask(goal.id, card); return; }
+      });
+
+      // Subtask input enter
+      card.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && e.target.classList.contains('subtask-input')) {
+          e.preventDefault();
+          e.stopPropagation();
+          addSubtask(goal.id, card);
+        }
+      });
+
+      return card;
+    }
+
+    function buildSubtasksHtml(goal) {
+      const items = goal.subtasks.map(s => `
+        <div class="subtask-row" data-sid="${s.id}">
+          <button class="subtask-check ${s.done ? 'checked' : ''}" data-sid="${s.id}" aria-label="${s.done ? 'Desmarcar' : 'Marcar'} etapa"></button>
+          <span class="subtask-text ${s.done ? 'done' : ''}">${escHtml(s.text)}</span>
+          <button class="subtask-remove" data-sid="${s.id}" aria-label="Remover etapa">✕</button>
+        </div>
+      `).join('');
+      return `
+        <div class="subtasks-list">${items}</div>
+        <div class="subtask-add-row">
+          <input class="subtask-input" type="text" placeholder="Nova etapa..." autocomplete="off" maxlength="120" />
+          <button class="subtask-add-btn">+ Etapa</button>
+        </div>
+      `;
+    }
+
+    /* ── Inline edit ── */
+    function startInlineEdit(titleEl, goal) {
+      titleEl.contentEditable = 'true';
+      titleEl.focus();
+      // Move cursor to end
+      const range = document.createRange();
+      range.selectNodeContents(titleEl);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+
+      function commit() {
+        titleEl.contentEditable = 'false';
+        const newTitle = titleEl.textContent.trim();
+        if (newTitle && newTitle !== goal.title) {
+          goal.title = newTitle;
+          save();
+          showToast('Objetivo atualizado');
+        } else {
+          // Restore if empty
+          titleEl.textContent = goal.title;
+        }
+        titleEl.removeEventListener('blur', commit);
+        titleEl.removeEventListener('keydown', onKey);
+      }
+      function onKey(e) {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        if (e.key === 'Escape') {
+          titleEl.textContent = goal.title;
+          titleEl.contentEditable = 'false';
+          titleEl.removeEventListener('blur', commit);
+          titleEl.removeEventListener('keydown', onKey);
+        }
+      }
+      titleEl.addEventListener('blur', commit, { once: true });
+      titleEl.addEventListener('keydown', onKey);
+    }
+
+    /* ═══════════════════════════════════════════════
+       SUBTASK ACTIONS
+    ═══════════════════════════════════════════════ */
+    function addSubtask(goalId, cardEl) {
+      const input = cardEl.querySelector('.subtask-input');
+      if (!input) return;
+      const text = input.value.trim();
+      if (!text) return;
+      const goal = goals.find(g => g.id === goalId);
+      if (!goal) return;
+      goal.subtasks.push({ id: uid(), text, done: false });
+      save();
+      input.value = '';
+      refreshSubtasksInCard(goal, cardEl);
+    }
+
+    function toggleSubtask(goalId, sid, cardEl) {
+      const goal = goals.find(g => g.id === goalId);
+      if (!goal) return;
+      const sub = goal.subtasks.find(s => s.id === sid);
+      if (!sub) return;
+      sub.done = !sub.done;
+      save();
+      refreshSubtasksInCard(goal, cardEl);
+    }
+
+    function removeSubtask(goalId, sid, cardEl) {
+      const goal = goals.find(g => g.id === goalId);
+      if (!goal) return;
+      goal.subtasks = goal.subtasks.filter(s => s.id !== sid);
+      save();
+      refreshSubtasksInCard(goal, cardEl);
+    }
+
+    function refreshSubtasksInCard(goal, cardEl) {
+      const body     = cardEl.querySelector('.subtask-body');
+      const toggle   = cardEl.querySelector('.subtask-toggle');
+      const progWrap = cardEl.querySelector('.subtask-progress');
+
+      const done  = goal.subtasks.filter(s => s.done).length;
+      const total = goal.subtasks.length;
+
+      // Rebuild body content (preserve open state)
+      const wasOpen = body && body.classList.contains('open');
+      if (body) body.innerHTML = buildSubtasksHtml(goal);
+      if (wasOpen && body) body.classList.add('open');
+
+      // Update toggle text
+      if (toggle) {
+        if (total > 0) {
+          toggle.style.display = '';
+          toggle.querySelector('.st-arrow').textContent = wasOpen ? '▾' : '▸';
+          toggle.childNodes[toggle.childNodes.length - 1].textContent = ` ${done}/${total} etapas`;
+        } else {
+          toggle.style.display = 'none';
+        }
+      }
+
+      // Update progress bar
+      if (progWrap) {
+        const fill = progWrap.querySelector('.subtask-progress-fill');
+        if (fill) fill.style.width = total > 0 ? (done/total*100) + '%' : '0%';
+      }
+
+      updateStats();
+    }
+
+    /* ═══════════════════════════════════════════════
+       ADD GOAL
+    ═══════════════════════════════════════════════ */
+    function addGoal() {
+      const input    = document.getElementById('goal-input');
+      const descEl   = document.getElementById('goal-desc');
+      const dlEl     = document.getElementById('goal-deadline');
+      const title    = input.value.trim();
+
+      if (!title) {
+        const addCard = document.getElementById('add-card');
+        addCard.style.animation = '';
+        void addCard.offsetWidth;
+        addCard.style.animation = 'shake 0.4s both';
+        setTimeout(() => addCard.style.animation = '', 450);
+        input.focus();
+        return;
+      }
+
+      const goal = {
+        id: uid(),
+        title,
+        desc:      descEl.value.trim(),
+        deadline:  dlEl.value || null,
+        priority:  selectedPriority,
+        subtasks:  [],
+        completed: false,
+        createdAt: Date.now(),
+      };
+
+      goals.unshift(goal);
+      save();
+      touchStreak();
+
+      input.value = '';
+      descEl.value = '';
+      dlEl.value = '';
+      document.getElementById('add-card').classList.remove('expanded');
+
+      if (currentFilter === 'done') setFilter('all');
+      else render();
+
+      showToast('Objetivo adicionado ✦');
+    }
+
+    /* ═══════════════════════════════════════════════
+       TOGGLE COMPLETE
+    ═══════════════════════════════════════════════ */
+    function toggleGoal(id, cardEl) {
+      const goal = goals.find(g => g.id === id);
+      if (!goal) return;
+      goal.completed = !goal.completed;
+      goal.completedAt = goal.completed ? Date.now() : null;
+      save();
+
+      if (goal.completed) {
+        touchStreak();
+        cardEl.classList.add('completing');
+        setTimeout(() => cardEl.classList.remove('completing'), 700);
+        cardEl.classList.add('completed');
+        const cb = cardEl.querySelector('.check-btn');
+        cb.title = 'Reabrir objetivo';
+        cb.setAttribute('aria-label', 'Reabrir objetivo');
+        cb.style.animation = 'ringPulse 0.6s ease';
+        setTimeout(() => cb.style.animation = '', 600);
+        const b = cardEl.querySelector('.badge-active, .badge-done');
+        if (b) { b.className = 'goal-badge badge-done'; b.textContent = '✓ Concluído'; }
+        // Refresh deadline chip
+        const footer = cardEl.querySelector('.goal-footer');
+        const oldChip = footer.querySelector('.deadline-chip');
+        if (oldChip) oldChip.outerHTML = deadlineChipHtml(goal.deadline, true);
+        setTimeout(() => triggerCelebration(cardEl), 150);
+      } else {
+        cardEl.classList.remove('completed');
+        const cb = cardEl.querySelector('.check-btn');
+        cb.title = 'Marcar como concluído';
+        cb.setAttribute('aria-label', 'Concluir objetivo');
+        const b = cardEl.querySelector('.badge-active, .badge-done');
+        if (b) { b.className = 'goal-badge badge-active'; b.textContent = '● Ativo'; }
+        const footer = cardEl.querySelector('.goal-footer');
+        const oldChip = footer.querySelector('.deadline-chip');
+        if (oldChip) oldChip.outerHTML = deadlineChipHtml(goal.deadline, false);
+      }
+      updateStats();
+    }
+
+    /* ═══════════════════════════════════════════════
+       DELETE WITH CONFIRM
+    ═══════════════════════════════════════════════ */
+    function handleDelete(id, cardEl, btnEl) {
+      if (deleteConfirmId === id) {
+        clearTimeout(deleteConfirmTimer);
+        deleteConfirmId = null;
+        cardEl.classList.add('removing');
+        cardEl.addEventListener('animationend', () => {
+          goals = goals.filter(g => g.id !== id);
+          save();
+          render();
+          showToast('Objetivo removido');
+        }, { once: true });
+      } else {
+        if (deleteConfirmId) resetConfirm();
+        deleteConfirmId = id;
+        btnEl.classList.add('confirming');
+        btnEl.textContent = 'OK?';
+        cardEl.classList.add('shake');
+        setTimeout(() => cardEl.classList.remove('shake'), 420);
+        deleteConfirmTimer = setTimeout(resetConfirm, 3000);
+      }
+    }
+    function resetConfirm() {
+      if (!deleteConfirmId) return;
+      const card = document.querySelector(`.goal-card[data-id="${deleteConfirmId}"]`);
+      if (card) {
+        const btn = card.querySelector('.btn-delete');
+        if (btn) { btn.classList.remove('confirming'); btn.textContent = '✕'; }
+      }
+      deleteConfirmId = null;
+      clearTimeout(deleteConfirmTimer);
+    }
+
+    /* ═══════════════════════════════════════════════
+       FILTER
+    ═══════════════════════════════════════════════ */
+    function setFilter(f) {
+      currentFilter = f;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === f));
+      render();
+    }
+
+    /* ═══════════════════════════════════════════════
+       TOAST
+    ═══════════════════════════════════════════════ */
+    let toastTimer;
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+    }
+
+    /* ═══════════════════════════════════════════════
+       CELEBRATION
+    ═══════════════════════════════════════════════ */
+    function triggerCelebration(cardEl) {
+      const msg     = CELEBRATIONS[Math.floor(Math.random() * CELEBRATIONS.length)];
+      const overlay = document.getElementById('celebration-overlay');
+      const textEl  = document.getElementById('celebration-text');
+      textEl.textContent = msg;
+      overlay.classList.remove('active');
+      void overlay.offsetWidth; // force reflow for re-trigger
+      overlay.classList.add('active');
+      const rect = cardEl.getBoundingClientRect();
+      spawnParticles(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    }
+
+    /* ═══════════════════════════════════════════════
+       PARTICLES
+    ═══════════════════════════════════════════════ */
+    const canvas = document.getElementById('particle-canvas');
+    const ctx    = canvas.getContext('2d');
+    let particles = [], animId = null;
+
+    function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    const P_COLORS = ['#2563eb','#3b7af5','#93b4f8','#bfcffe','#1d4ed8','#60a5fa','#ffffff','#dbeafe'];
+
+    function spawnParticles(cx, cy) {
+      for (let i = 0; i < 80; i++) {
+        const angle = (Math.PI * 2 * i / 80) + (Math.random() - 0.5) * 0.5;
+        const speed = 2.5 + Math.random() * 9;
+        particles.push({
+          x: cx, y: cy,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - 2.5,
+          alpha: 1,
+          size:  2 + Math.random() * 4.5,
+          color: P_COLORS[Math.floor(Math.random() * P_COLORS.length)],
+          gravity: 0.15 + Math.random() * 0.1,
+          friction: 0.97,
+          spin:     (Math.random() - 0.5) * 0.35,
+          rotation: Math.random() * Math.PI * 2,
+          shape:    Math.random() < 0.25 ? 'star' : 'circle',
+          life: 1,
+          decay: 0.013 + Math.random() * 0.011,
+        });
+      }
+      if (!animId) particleLoop();
+    }
+
+    function drawStar(x, y, r, rot) {
+      ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const a1 = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+        const a2 = ((i * 4 + 2) * Math.PI) / 5 - Math.PI / 2;
+        if (i === 0) ctx.moveTo(Math.cos(a1) * r, Math.sin(a1) * r);
+        else         ctx.lineTo(Math.cos(a1) * r, Math.sin(a1) * r);
+        ctx.lineTo(Math.cos(a2) * r * 0.4, Math.sin(a2) * r * 0.4);
+      }
+      ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+
+    function particleLoop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles = particles.filter(p => p.alpha > 0.01);
+      for (const p of particles) {
+        p.vx *= p.friction; p.vy *= p.friction; p.vy += p.gravity;
+        p.x  += p.vx;       p.y  += p.vy;
+        p.rotation += p.spin;
+        p.life -= p.decay;
+        p.alpha = Math.max(0, p.life);
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle   = p.color;
+        if (p.shape === 'star') drawStar(p.x, p.y, p.size, p.rotation);
+        else { ctx.beginPath(); ctx.arc(p.x, p.y, p.size / 2, 0, Math.PI * 2); ctx.fill(); }
+      }
+      ctx.globalAlpha = 1;
+      animId = particles.length > 0 ? requestAnimationFrame(particleLoop) : null;
+    }
+
+    /* ═══════════════════════════════════════════════
+       FOCUS MODE
+    ═══════════════════════════════════════════════ */
+    let focusGoals = []; // snapshot of active goals when focus opens
+
+    function openFocusMode(startId) {
+      focusGoals = goals.filter(g => !g.completed);
+      if (focusGoals.length === 0) { showToast('Sem objetivos ativos para focar.'); return; }
+      const idx = startId ? focusGoals.findIndex(g => g.id === startId) : 0;
+      focusIndex = idx >= 0 ? idx : 0;
+      renderFocusSlide();
+      document.getElementById('focus-overlay').classList.add('open');
+      document.body.style.overflow = 'hidden';
+      document.getElementById('focus-overlay').focus();
+    }
+
+    function closeFocusMode() {
+      document.getElementById('focus-overlay').classList.remove('open');
+      document.body.style.overflow = '';
+      render(); // refresh list in case things changed
+    }
+
+    function renderFocusSlide() {
+      const goal = focusGoals[focusIndex];
+      if (!goal) return;
+
+      document.getElementById('focus-title').textContent = goal.title;
+      document.getElementById('focus-desc').textContent  = goal.desc || '';
+
+      const dlTxt = deadlineTextForFocus(goal.deadline, goal.completed);
+      const dlEl  = document.getElementById('focus-deadline-txt');
+      dlEl.textContent = dlTxt;
+      dlEl.style.display = dlTxt ? '' : 'none';
+
+      // Subtasks
+      const stWrap = document.getElementById('focus-subtasks-wrap');
+      if (goal.subtasks.length > 0) {
+        stWrap.style.display = '';
+        stWrap.innerHTML = `
+          <p class="focus-subtasks-title">Etapas</p>
+          ${goal.subtasks.map(s => `
+            <div class="focus-subtask-row">
+              <button class="subtask-check ${s.done ? 'checked' : ''}" data-sid="${s.id}" aria-label="Marcar etapa"></button>
+              <span class="focus-subtask-text ${s.done ? 'done' : ''}">${escHtml(s.text)}</span>
+            </div>
+          `).join('')}
+        `;
+        // Subtask check listeners in focus mode
+        stWrap.querySelectorAll('.subtask-check').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const liveGoal = goals.find(g => g.id === goal.id);
+            if (!liveGoal) return;
+            const sub = liveGoal.subtasks.find(s => s.id === btn.dataset.sid);
+            if (!sub) return;
+            sub.done = !sub.done;
+            save();
+            // Sync focusGoals snapshot
+            const fg = focusGoals.find(g => g.id === goal.id);
+            if (fg) { const fs = fg.subtasks.find(s => s.id === btn.dataset.sid); if (fs) fs.done = sub.done; }
+            renderFocusSlide();
+          });
+        });
+      } else {
+        stWrap.style.display = 'none';
+      }
+
+      // Complete button
+      const completeBtn = document.getElementById('focus-complete-btn');
+      if (goal.completed) {
+        completeBtn.textContent = '✓ Já concluído';
+        completeBtn.className = 'btn-focus-complete already-done';
+      } else {
+        completeBtn.textContent = 'Marcar como concluído';
+        completeBtn.className = 'btn-focus-complete';
+      }
+
+      // Nav
+      document.getElementById('focus-counter').textContent = `${focusIndex + 1} / ${focusGoals.length}`;
+      document.getElementById('focus-prev').disabled = focusIndex === 0;
+      document.getElementById('focus-next').disabled = focusIndex === focusGoals.length - 1;
+    }
+
+    // Focus nav buttons
+    document.getElementById('focus-prev').addEventListener('click', () => {
+      if (focusIndex > 0) { focusIndex--; renderFocusSlide(); }
+    });
+    document.getElementById('focus-next').addEventListener('click', () => {
+      if (focusIndex < focusGoals.length - 1) { focusIndex++; renderFocusSlide(); }
+    });
+
+    // Focus complete
+    document.getElementById('focus-complete-btn').addEventListener('click', () => {
+      const goal = focusGoals[focusIndex];
+      if (!goal || goal.completed) return;
+      const liveGoal = goals.find(g => g.id === goal.id);
+      if (!liveGoal) return;
+      liveGoal.completed = true;
+      liveGoal.completedAt = Date.now();
+      goal.completed = true;
+      save();
+      touchStreak();
+      updateStats();
+      renderFocusSlide();
+      // Particles from center screen
+      spawnParticles(window.innerWidth / 2, window.innerHeight / 2);
+      // Celebration
+      const textEl  = document.getElementById('celebration-text');
+      const overlay = document.getElementById('celebration-overlay');
+      textEl.textContent = CELEBRATIONS[Math.floor(Math.random() * CELEBRATIONS.length)];
+      overlay.classList.remove('active');
+      void overlay.offsetWidth;
+      overlay.classList.add('active');
+    });
+
+    // Focus close
+    document.getElementById('focus-close-btn').addEventListener('click', closeFocusMode);
+
+    // Close focus on ESC
+    document.getElementById('focus-overlay').addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeFocusMode();
+      if (e.key === 'ArrowLeft'  && focusIndex > 0) { focusIndex--; renderFocusSlide(); }
+      if (e.key === 'ArrowRight' && focusIndex < focusGoals.length - 1) { focusIndex++; renderFocusSlide(); }
+    });
+
+    /* ═══════════════════════════════════════════════
+       SCROLL LINE
+    ═══════════════════════════════════════════════ */
+    window.addEventListener('scroll', () => {
+      const total = document.body.scrollHeight - window.innerHeight;
+      document.getElementById('scroll-line').style.width =
+        total > 0 ? (window.scrollY / total * 100) + '%' : '0%';
+    }, { passive: true });
+
+    /* ═══════════════════════════════════════════════
+       PRIORITY PICKER
+    ═══════════════════════════════════════════════ */
+    document.getElementById('priority-opts').addEventListener('click', e => {
+      const btn = e.target.closest('.priority-opt');
+      if (!btn) return;
+      selectedPriority = btn.dataset.p;
+      document.querySelectorAll('.priority-opt').forEach(b => {
+        b.className = 'priority-opt';
+        if (b.dataset.p === selectedPriority) b.classList.add('sel-' + selectedPriority);
+      });
+    });
+
+    /* ═══════════════════════════════════════════════
+       FORM EVENTS
+    ═══════════════════════════════════════════════ */
+    document.getElementById('btn-add').addEventListener('click', addGoal);
+
+    document.getElementById('goal-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); addGoal(); }
+    });
+
+    document.getElementById('goal-input').addEventListener('focus', () => {
+      document.getElementById('add-card').classList.add('expanded');
+    });
+
+    // Close expand + reset confirm on outside click
+    document.addEventListener('click', e => {
+      const addCard = document.getElementById('add-card');
+      if (!addCard.contains(e.target) && !document.getElementById('goal-input').value) {
+        addCard.classList.remove('expanded');
+      }
+      if (!e.target.closest('.btn-delete')) resetConfirm();
+    });
+
+    document.getElementById('filter-bar').addEventListener('click', e => {
+      const btn = e.target.closest('.filter-btn');
+      if (btn) setFilter(btn.dataset.filter);
+    });
+
+    /* ═══════════════════════════════════════════════
+       KEYBOARD SHORTCUTS
+    ═══════════════════════════════════════════════ */
+    document.addEventListener('keydown', e => {
+      const tag = document.activeElement.tagName;
+      const inInput = tag === 'INPUT' || tag === 'TEXTAREA' ||
+                      document.activeElement.contentEditable === 'true';
+      if (inInput) return;
+
+      if (e.key === 'n' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        document.getElementById('goal-input').focus();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+      if (e.key === 'f' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        openFocusMode(null);
+      }
+      if (e.key === 'Escape') resetConfirm();
+    });
+
+    /* ═══════════════════════════════════════════════
+       INIT
+    ═══════════════════════════════════════════════ */
+    load();
+    renderQuote();
+    renderStreak();
+    render();
+
+  })();
+  </script>
+</body>
+</html>
