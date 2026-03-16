@@ -1311,54 +1311,36 @@ const SUPABASE_KEY = 'sb_publishable_67hKR2Wt72hPvaUuA5wfsQ_JdhVTypM';
       showSaving();
 
       try {
-        const { data: { session }, error: sessErr } = await sb.auth.getSession();
-
-        if (sessErr || !session) {
-          showSaveError('SEM SESSÃO: ' + (sessErr?.message || 'null'));
-          return;
-        }
-
         const row = localToDb(goal);
 
-        // Debug: show exactly what we're sending
-        console.log('INSERT row:', JSON.stringify(row));
-        console.log('user id:', currentUser.id);
-        console.log('session uid:', session.user.id);
-
-        const { data, error: insertErr } = await sb
-          .from('goals')
-          .insert(row)
-          .select();
-
-        console.log('insert result - data:', data, 'error:', insertErr);
+        // Try INSERT
+        const { error: insertErr } = await sb.from('goals').insert(row);
 
         if (!insertErr) {
           showSaved();
           return;
         }
 
+        // Already exists — do UPDATE
         if (insertErr.code === '23505') {
-          const { data: upData, error: updateErr } = await sb
+          const { error: updateErr } = await sb
             .from('goals')
             .update(row)
-            .eq('id', goal.id)
-            .select();
-
-          console.log('update result - data:', upData, 'error:', updateErr);
+            .eq('id', goal.id);
 
           if (updateErr) {
-            showSaveError('UPDATE ERR: ' + updateErr.code + ' — ' + updateErr.message);
+            showSaveError(updateErr.code + ': ' + updateErr.message);
           } else {
             showSaved();
           }
           return;
         }
 
-        showSaveError('INSERT ERR: ' + insertErr.code + ' — ' + insertErr.message);
+        // Other error
+        showSaveError(insertErr.code + ': ' + insertErr.message);
 
       } catch(e) {
-        console.error('exception:', e);
-        showSaveError('EXCEPTION: ' + e.message);
+        showSaveError('Erro: ' + e.message);
       }
     }
 
