@@ -1311,49 +1311,54 @@ const SUPABASE_KEY = 'sb_publishable_67hKR2Wt72hPvaUuA5wfsQ_JdhVTypM';
       showSaving();
 
       try {
-        // Always refresh session before writing
         const { data: { session }, error: sessErr } = await sb.auth.getSession();
+
         if (sessErr || !session) {
-          showSaveError('Sessão expirada — faça login novamente');
-          setTimeout(() => sb.auth.signOut(), 1500);
+          showSaveError('SEM SESSÃO: ' + (sessErr?.message || 'null'));
           return;
         }
 
         const row = localToDb(goal);
 
-        // Try INSERT first
-        const { error: insertErr } = await sb
+        // Debug: show exactly what we're sending
+        console.log('INSERT row:', JSON.stringify(row));
+        console.log('user id:', currentUser.id);
+        console.log('session uid:', session.user.id);
+
+        const { data, error: insertErr } = await sb
           .from('goals')
-          .insert(row);
+          .insert(row)
+          .select();
+
+        console.log('insert result - data:', data, 'error:', insertErr);
 
         if (!insertErr) {
           showSaved();
           return;
         }
 
-        // If duplicate (already exists), do UPDATE
         if (insertErr.code === '23505') {
-          const { error: updateErr } = await sb
+          const { data: upData, error: updateErr } = await sb
             .from('goals')
             .update(row)
-            .eq('id', goal.id);
+            .eq('id', goal.id)
+            .select();
+
+          console.log('update result - data:', upData, 'error:', updateErr);
 
           if (updateErr) {
-            console.error('update error:', updateErr);
-            showSaveError(updateErr.message || updateErr.code);
+            showSaveError('UPDATE ERR: ' + updateErr.code + ' — ' + updateErr.message);
           } else {
             showSaved();
           }
           return;
         }
 
-        // Any other insert error
-        console.error('insert error:', insertErr);
-        showSaveError(insertErr.message || insertErr.code);
+        showSaveError('INSERT ERR: ' + insertErr.code + ' — ' + insertErr.message);
 
       } catch(e) {
-        console.error('persistGoal exception:', e);
-        showSaveError(e.message || 'Erro inesperado');
+        console.error('exception:', e);
+        showSaveError('EXCEPTION: ' + e.message);
       }
     }
 
