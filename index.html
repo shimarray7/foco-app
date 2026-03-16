@@ -121,9 +121,10 @@
      AUTH SCREEN
   ═══════════════════════════════════════════════════════ */
   #auth-screen {
-    position: fixed; inset: 0; z-index: 9000;
+    position: fixed; inset: 0; z-index: 9500;
     display: flex; align-items: center; justify-content: center;
     padding: 20px;
+    background: var(--bg);
     opacity: 0; transition: opacity 0.4s ease;
     pointer-events: none;
   }
@@ -1065,9 +1066,18 @@
        AUTH SCREEN
     ═══════════════════════════════════════════════ */
     function showAuthScreen() {
-      document.getElementById('auth-screen').classList.add('visible');
+      // Hide app
       document.getElementById('main-app').classList.remove('visible');
       document.getElementById('top-nav').classList.remove('visible');
+      document.getElementById('save-indicator').classList.remove('visible');
+      // Clear login fields
+      const le = document.getElementById('login-email');
+      const lp = document.getElementById('login-password');
+      if (le) le.value = '';
+      if (lp) lp.value = '';
+      clearAuthMessages();
+      // Show auth screen on top
+      document.getElementById('auth-screen').classList.add('visible');
     }
 
     function showAppScreen() {
