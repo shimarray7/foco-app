@@ -1309,68 +1309,55 @@ const SUPABASE_KEY = 'sb_publishable_67hKR2Wt72hPvaUuA5wfsQ_JdhVTypM';
     async function persistGoal(goal) {
       if (!currentUser) return;
       showSaving();
-      const row = localToDb(goal);
 
       try {
-        // Get fresh session token
-        const { data: sessionData } = await sb.auth.getSession();
-        const token = sessionData?.session?.access_token;
-
-        if (!token) {
+        // Always refresh session before writing
+        const { data: { session }, error: sessErr } = await sb.auth.getSession();
+        if (sessErr || !session) {
           showSaveError('Sessão expirada — faça login novamente');
-          await sb.auth.signOut();
+          setTimeout(() => sb.auth.signOut(), 1500);
           return;
         }
 
-        // AbortController gives us a real network timeout
-        const controller = new AbortController();
-        const timeoutId  = setTimeout(() => controller.abort(), 12000);
+        const row = localToDb(goal);
 
-        const SUPA_URL = SUPABASE_URL.replace(/\/+$/, '');
-        let response;
-        try {
-          response = await fetch(SUPA_URL + '/rest/v1/goals', {
-            method:  'POST',
-            signal:  controller.signal,
-            headers: {
-              'Content-Type':  'application/json',
-              'apikey':        SUPABASE_KEY,
-              'Authorization': 'Bearer ' + token,
-              'Prefer':        'resolution=merge-duplicates,return=minimal',
-            },
-            body: JSON.stringify(row),
-          });
-        } finally {
-          clearTimeout(timeoutId);
-        }
+        // Try INSERT first
+        const { error: insertErr } = await sb
+          .from('goals')
+          .insert(row);
 
-        if (!response.ok) {
-          const errText = await response.text();
-          console.error('persistGoal HTTP error:', response.status, errText);
-          let errMsg = 'HTTP ' + response.status;
-          try { const j = JSON.parse(errText); errMsg = j.message || j.hint || j.details || errMsg; } catch(e2) {}
-          showSaveError(errMsg);
-        } else {
+        if (!insertErr) {
           showSaved();
+          return;
         }
+
+        // If duplicate (already exists), do UPDATE
+        if (insertErr.code === '23505') {
+          const { error: updateErr } = await sb
+            .from('goals')
+            .update(row)
+            .eq('id', goal.id);
+
+          if (updateErr) {
+            console.error('update error:', updateErr);
+            showSaveError(updateErr.message || updateErr.code);
+          } else {
+            showSaved();
+          }
+          return;
+        }
+
+        // Any other insert error
+        console.error('insert error:', insertErr);
+        showSaveError(insertErr.message || insertErr.code);
 
       } catch(e) {
-        console.error('persistGoal exception:', e.name, e.message);
-        if (e.name === 'AbortError') {
-          showSaveError('Timeout — Supabase não respondeu. Verifique Authentication → URL Configuration no Supabase e adicione seu domínio Vercel.');
-        } else {
-          showSaveError(e.message || 'Erro de conexão');
-        }
+        console.error('persistGoal exception:', e);
+        showSaveError(e.message || 'Erro inesperado');
       }
     }
 
-    /* Wraps a Supabase promise with a timeout */
-    function withTimeout(promise, ms) {
-      const timer = new Promise(resolve =>
-        setTimeout(() => resolve({ error: { message: 'Timeout após ' + (ms/1000) + 's', code: 'TIMEOUT' } }), ms)
-      );
-      return Promise.race([promise, timer]);
-    }
+
 
     /* ═══════════════════════════════════════════════
        DATABASE — DELETE
@@ -1379,39 +1366,20 @@ const SUPABASE_KEY = 'sb_publishable_67hKR2Wt72hPvaUuA5wfsQ_JdhVTypM';
       if (!currentUser) return;
       showSaving();
       try {
-        const { data: sessionData } = await sb.auth.getSession();
-        const token = sessionData?.session?.access_token;
-        if (!token) { showSaveError('Sessão expirada'); return; }
+        const { error } = await sb
+          .from('goals')
+          .delete()
+          .eq('id', id);
 
-        const controller = new AbortController();
-        const timeoutId  = setTimeout(() => controller.abort(), 12000);
-
-        const SUPA_URL = SUPABASE_URL.replace(/\/+$/, '');
-        let response;
-        try {
-          response = await fetch(
-            SUPA_URL + '/rest/v1/goals?id=eq.' + encodeURIComponent(id) + '&user_id=eq.' + encodeURIComponent(currentUser.id), {
-            method:  'DELETE',
-            signal:  controller.signal,
-            headers: {
-              'apikey':        SUPABASE_KEY,
-              'Authorization': 'Bearer ' + token,
-            },
-          });
-        } finally {
-          clearTimeout(timeoutId);
-        }
-
-        if (!response.ok) {
-          const errText = await response.text();
-          console.error('deleteGoalFromDb error:', response.status, errText);
-          showSaveError('Erro ao remover: HTTP ' + response.status);
+        if (error) {
+          console.error('delete error:', error);
+          showSaveError(error.message || error.code);
         } else {
           showSaved();
         }
       } catch(e) {
-        console.error('deleteGoalFromDb exception:', e.name, e.message);
-        showSaveError(e.name === 'AbortError' ? 'Timeout ao remover' : (e.message || 'Erro de conexão'));
+        console.error('deleteGoalFromDb exception:', e);
+        showSaveError(e.message || 'Erro inesperado');
       }
     }
 
