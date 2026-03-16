@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400;1,500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
   <!-- Supabase SDK -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
 
   <!--
   ╔══════════════════════════════════════════════════════════╗
@@ -1004,7 +1004,8 @@
     /* ═══════════════════════════════════════════════
        !! CONFIGURAÇÃO — SUBSTITUA AQUI !!
     ═══════════════════════════════════════════════ */
-    const SUPABASE_URL = 'https://nwosvkdcweibdhexijkw.supabase.co';
+    
+const SUPABASE_URL = 'https://nwosvkdcweibdhexijkw.supabase.co';
     const SUPABASE_KEY = 'sb_publishable_67hKR2Wt72hPvaUuA5wfsQ_JdhVTypM';
 
     /* ═══════════════════════════════════════════════
@@ -1312,19 +1313,49 @@
       showSaving();
       const row = localToDb(goal);
 
-      // Race: DB call vs 15s timeout
-      const dbCall = sb.from('goals').upsert(row, { onConflict: 'id' });
-      const timeout = new Promise(resolve =>
-        setTimeout(() => resolve({ error: { message: 'Timeout: sem resposta do servidor em 15s' } }), 15000)
-      );
+      try {
+        // Try INSERT first; if duplicate key, fall back to UPDATE
+        let error = null;
 
-      const { error } = await Promise.race([dbCall, timeout]);
-      if (error) {
-        console.error('persistGoal error:', error);
-        showSaveError(error.message);
-      } else {
-        showSaved();
+        const insertResult = await withTimeout(
+          sb.from('goals').insert(row),
+          12000
+        );
+
+        if (insertResult.error) {
+          // If it already exists (duplicate), try UPDATE instead
+          if (insertResult.error.code === '23505' || insertResult.error.message?.includes('duplicate')) {
+            const updateResult = await withTimeout(
+              sb.from('goals')
+                .update(row)
+                .eq('id', goal.id)
+                .eq('user_id', currentUser.id),
+              12000
+            );
+            error = updateResult.error;
+          } else {
+            error = insertResult.error;
+          }
+        }
+
+        if (error) {
+          console.error('persistGoal error:', JSON.stringify(error));
+          showSaveError(error.message || error.code || 'Erro desconhecido');
+        } else {
+          showSaved();
+        }
+      } catch(e) {
+        console.error('persistGoal exception:', e);
+        showSaveError(e.message || 'Erro de conexão');
       }
+    }
+
+    /* Wraps a Supabase promise with a timeout */
+    function withTimeout(promise, ms) {
+      const timer = new Promise(resolve =>
+        setTimeout(() => resolve({ error: { message: 'Timeout após ' + (ms/1000) + 's — verifique sua conexão e as configurações do Supabase', code: 'TIMEOUT' } }), ms)
+      );
+      return Promise.race([promise, timer]);
     }
 
     /* ═══════════════════════════════════════════════
