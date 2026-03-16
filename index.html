@@ -1005,7 +1005,7 @@
        !! CONFIGURAÇÃO — SUBSTITUA AQUI !!
     ═══════════════════════════════════════════════ */
     const SUPABASE_URL = 'https://nwosvkdcweibdhexijkw.supabase.co';
-    const SUPABASE_KEY = 'sb_publishable_67hKR2Wt72hPvaUuA5wfsQ_JdhVTypM';
+const SUPABASE_KEY = 'sb_publishable_67hKR2Wt72hPvaUuA5wfsQ_JdhVTypM';
     /* ═══════════════════════════════════════════════
        SUPABASE CLIENT
     ═══════════════════════════════════════════════ */
@@ -1322,32 +1322,45 @@
           return;
         }
 
-        // Use direct fetch instead of SDK client — bypasses any SDK bug
-        const SUPA_URL = SUPABASE_URL.replace(/\/$/, '');
-        const response = await fetch(SUPA_URL + '/rest/v1/goals', {
-          method: 'POST',
-          headers: {
-            'Content-Type':  'application/json',
-            'apikey':        SUPABASE_KEY,
-            'Authorization': 'Bearer ' + token,
-            'Prefer':        'resolution=merge-duplicates,return=minimal',
-          },
-          body: JSON.stringify(row),
-        });
+        // AbortController gives us a real network timeout
+        const controller = new AbortController();
+        const timeoutId  = setTimeout(() => controller.abort(), 12000);
+
+        const SUPA_URL = SUPABASE_URL.replace(/\/+$/, '');
+        let response;
+        try {
+          response = await fetch(SUPA_URL + '/rest/v1/goals', {
+            method:  'POST',
+            signal:  controller.signal,
+            headers: {
+              'Content-Type':  'application/json',
+              'apikey':        SUPABASE_KEY,
+              'Authorization': 'Bearer ' + token,
+              'Prefer':        'resolution=merge-duplicates,return=minimal',
+            },
+            body: JSON.stringify(row),
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
 
         if (!response.ok) {
           const errText = await response.text();
           console.error('persistGoal HTTP error:', response.status, errText);
           let errMsg = 'HTTP ' + response.status;
-          try { const j = JSON.parse(errText); errMsg = j.message || j.hint || errMsg; } catch(e) {}
+          try { const j = JSON.parse(errText); errMsg = j.message || j.hint || j.details || errMsg; } catch(e2) {}
           showSaveError(errMsg);
         } else {
           showSaved();
         }
 
       } catch(e) {
-        console.error('persistGoal exception:', e);
-        showSaveError(e.message || 'Erro de conexão');
+        console.error('persistGoal exception:', e.name, e.message);
+        if (e.name === 'AbortError') {
+          showSaveError('Timeout — Supabase não respondeu. Verifique Authentication → URL Configuration no Supabase e adicione seu domínio Vercel.');
+        } else {
+          showSaveError(e.message || 'Erro de conexão');
+        }
       }
     }
 
@@ -1370,15 +1383,25 @@
         const token = sessionData?.session?.access_token;
         if (!token) { showSaveError('Sessão expirada'); return; }
 
-        const SUPA_URL = SUPABASE_URL.replace(/\/$/, '');
-        const response = await fetch(
-          SUPA_URL + '/rest/v1/goals?id=eq.' + encodeURIComponent(id) + '&user_id=eq.' + encodeURIComponent(currentUser.id), {
-          method: 'DELETE',
-          headers: {
-            'apikey':        SUPABASE_KEY,
-            'Authorization': 'Bearer ' + token,
-          },
-        });
+        const controller = new AbortController();
+        const timeoutId  = setTimeout(() => controller.abort(), 12000);
+
+        const SUPA_URL = SUPABASE_URL.replace(/\/+$/, '');
+        let response;
+        try {
+          response = await fetch(
+            SUPA_URL + '/rest/v1/goals?id=eq.' + encodeURIComponent(id) + '&user_id=eq.' + encodeURIComponent(currentUser.id), {
+            method:  'DELETE',
+            signal:  controller.signal,
+            headers: {
+              'apikey':        SUPABASE_KEY,
+              'Authorization': 'Bearer ' + token,
+            },
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
+
         if (!response.ok) {
           const errText = await response.text();
           console.error('deleteGoalFromDb error:', response.status, errText);
@@ -1387,8 +1410,8 @@
           showSaved();
         }
       } catch(e) {
-        console.error('deleteGoalFromDb exception:', e);
-        showSaveError(e.message || 'Erro de conexão');
+        console.error('deleteGoalFromDb exception:', e.name, e.message);
+        showSaveError(e.name === 'AbortError' ? 'Timeout ao remover' : (e.message || 'Erro de conexão'));
       }
     }
 
