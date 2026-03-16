@@ -1003,8 +1003,8 @@
     /* ═══════════════════════════════════════════════
        !! CONFIGURAÇÃO — SUBSTITUA AQUI !!
     ═══════════════════════════════════════════════ */
-    const SUPABASE_URL = 'https://nwosvkdcweibdhexijkw.supabase.co';
-    const SUPABASE_KEY = 'sb_publishable_67hKR2Wt72hPvaUuA5wfsQ_JdhVTypM';
+    const SUPABASE_URL = 'COLE_AQUI_SUA_PROJECT_URL';
+    const SUPABASE_KEY = 'COLE_AQUI_SUA_ANON_KEY';
 
     /* ═══════════════════════════════════════════════
        SUPABASE CLIENT
@@ -1215,6 +1215,10 @@
 
     /* ─ DB row → local object ─ */
     function dbToLocal(row) {
+      // created_at is stored as bigint (ms timestamp)
+      const createdAt = typeof row.created_at === 'number'
+        ? row.created_at
+        : (row.created_at ? new Date(row.created_at).getTime() : Date.now());
       return {
         id:          row.id,
         title:       row.title,
@@ -1224,7 +1228,7 @@
         subtasks:    Array.isArray(row.subtasks) ? row.subtasks : [],
         completed:   row.completed || false,
         completedAt: row.completed_at || null,
-        createdAt:   new Date(row.created_at).getTime(),
+        createdAt,
       };
     }
 
@@ -1240,6 +1244,7 @@
         subtasks:     goal.subtasks || [],
         completed:    goal.completed || false,
         completed_at: goal.completedAt || null,
+        created_at:   goal.createdAt || Date.now(),   // ← campo adicionado
       };
     }
 
@@ -1252,18 +1257,33 @@
       const ind   = document.getElementById('save-indicator');
       const dot   = document.getElementById('save-dot');
       const label = document.getElementById('save-label');
-      dot.className   = 'save-dot';
+      dot.className     = 'save-dot';
       label.textContent = 'Salvando...';
       ind.classList.add('visible');
     }
     function showSaved() {
       const dot   = document.getElementById('save-dot');
       const label = document.getElementById('save-label');
-      dot.className   = 'save-dot done';
+      dot.className     = 'save-dot done';
       label.textContent = 'Salvo ✓';
       saveHideTimer = setTimeout(() => {
         document.getElementById('save-indicator').classList.remove('visible');
       }, 1800);
+    }
+    function showSaveError(msg) {
+      const ind   = document.getElementById('save-indicator');
+      const dot   = document.getElementById('save-dot');
+      const label = document.getElementById('save-label');
+      dot.className     = 'save-dot';
+      dot.style.background = 'var(--danger)';
+      label.textContent = 'Erro ao salvar';
+      label.style.color = 'var(--danger)';
+      showToast('Erro ao salvar: ' + (msg || 'verifique o console'));
+      saveHideTimer = setTimeout(() => {
+        ind.classList.remove('visible');
+        dot.style.background = '';
+        label.style.color = '';
+      }, 4000);
     }
 
     /* ═══════════════════════════════════════════════
@@ -1272,9 +1292,14 @@
     async function persistGoal(goal) {
       if (!currentUser) return;
       showSaving();
-      const { error } = await sb.from('goals').upsert(localToDb(goal));
-      if (error) { showToast('Erro ao salvar. Tente novamente.'); console.error(error); }
-      else showSaved();
+      const row = localToDb(goal);
+      const { error } = await sb.from('goals').upsert(row, { onConflict: 'id' });
+      if (error) {
+        console.error('persistGoal error:', error);
+        showSaveError(error.message);
+      } else {
+        showSaved();
+      }
     }
 
     /* ═══════════════════════════════════════════════
@@ -1283,9 +1308,13 @@
     async function deleteGoalFromDb(id) {
       if (!currentUser) return;
       showSaving();
-      const { error } = await sb.from('goals').delete().eq('id', id);
-      if (error) { showToast('Erro ao remover. Tente novamente.'); console.error(error); }
-      else showSaved();
+      const { error } = await sb.from('goals').delete().eq('id', id).eq('user_id', currentUser.id);
+      if (error) {
+        console.error('deleteGoalFromDb error:', error);
+        showSaveError(error.message);
+      } else {
+        showSaved();
+      }
     }
 
     /* ═══════════════════════════════════════════════
